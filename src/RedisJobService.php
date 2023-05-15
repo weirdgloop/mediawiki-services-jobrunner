@@ -22,6 +22,8 @@ abstract class RedisJobService {
 	protected $aggrSrvs = [];
 	/** @var string Redis password */
 	protected $password;
+	/** @var bool Should redis connections be persistent */
+	protected $persistent;
 	/** @var string IP address or hostname */
 	protected $statsdHost;
 	/** @var array statsd packets pending sending */
@@ -154,6 +156,7 @@ abstract class RedisJobService {
 		if ( isset( $config['redis']['password'] ) ) {
 			$this->password = $config['redis']['password'];
 		}
+		$this->persistent = $config['redis']['persistent'] ?? false;
 
 		$this->claimTTLMap['*'] = 3600;
 		if ( isset( $config['limits']['claimTTL'] ) ) {
@@ -268,19 +271,27 @@ abstract class RedisJobService {
 			}
 			$host = $servers[0];
 			$port = $servers[1] ?: null;
-			$result = $conn->connect( $host, (int)$port, 5 );
+			if ( $this->persistent ) {
+				$result = $conn->pconnect( $host, (int)$port, 5 );
+			} else {
+				$result = $conn->connect( $host, (int)$port, 5 );
+			}
 			if ( !$result ) {
 				$this->error( "Could not connect to Redis server $host:$port." );
+				$this->incrStats( "redis-error." . gethostname(), 1 );
 				// Mark server down for some time to avoid further timeouts
 				$this->downSrvs[$server] = time() + 30;
 
 				return false;
 			}
-			if ( $this->password !== null ) {
-				$conn->auth( $this->password );
+			if ( ( $this->password !== null ) && !$conn->auth( $this->password ) ) {
+				$this->error( "Authentication error connecting to $host:$port." );
+				$this->incrStats( "redis-error." . gethostname(), 1 );
 			}
-		} catch ( RedisException ) {
+		} catch ( RedisException $e ) {
 			$this->downSrvs[$server] = time() + 30;
+			$this->error( "Redis exception connecting to $host:$port: " . $e->getMessage() );
+			$this->incrStats( "redis-error." . gethostname(), 1 );
 
 			return false;
 		}
