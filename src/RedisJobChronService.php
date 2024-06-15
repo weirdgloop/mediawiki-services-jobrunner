@@ -223,7 +223,7 @@ class RedisJobChronService extends RedisJobService {
 				if ( $ready > 0 ) {
 					// This checks $ready to handle lost aggregator updates as well as
 					// to merge after network partitions that caused aggregator fail-over.
-					$aggrMap[$this->encQueueName( $qType, $qDomain )] = time();
+					$aggrMap[$this->encQueueName( $qType, $qDomain )] = $ready;
 				}
 				$affectedJobs = ( array_sum( $result ) - $ready );
 				$this->incrStats( "job-recycle.$qType", $released );

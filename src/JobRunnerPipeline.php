@@ -121,6 +121,11 @@ class JobRunnerPipeline {
 			if ( !$queue ) {
 				break;
 			}
+			[ $type, $db ] = $queue;
+			--$pending[$type][$db];
+			if ( $pending[$type][$db] <= 0 ) {
+				unset( $pending[$type][$db] );
+			}
 			// Spawn a job runner for this loop ID
 			$highPrio = $prioMap[$loop]['high'];
 			$this->spawnRunner( $loop, $slot, $highPrio, $queue, $procSlot );
