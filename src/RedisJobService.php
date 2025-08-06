@@ -492,12 +492,25 @@ abstract class RedisJobService {
 		);
 	}
 
+	private function log( $lvl, $msg ) {
+		$json = [
+			'severity' => $lvl,
+			'time' => ( new DateTimeImmutable( 'now', new DateTimeZone( 'UTC' ) ) )->format( DateTimeInterface::RFC3339_EXTENDED ),
+		];
+		if ( is_array( $msg ) ) {
+			$json += $msg;
+		} else {
+			$json['message'] = (string)$msg;
+		}
+		print( json_encode( $json ) . "\n" );
+	}
+
 	/**
 	 * @param string $s
 	 */
 	public function debug( $s ) {
 		if ( $this->verbose ) {
-			print date( DATE_ATOM ) . " DEBUG: $s\n";
+			$this->log( 'DEBUG', $s );
 		}
 	}
 
@@ -505,13 +518,13 @@ abstract class RedisJobService {
 	 * @param string $s
 	 */
 	public function notice( $s ) {
-		print date( DATE_ATOM ) . " NOTICE: $s\n";
+		$this->log( 'NOTICE', $s );
 	}
 
 	/**
 	 * @param string $s
 	 */
 	public function error( $s ) {
-		fwrite( STDERR, date( DATE_ATOM ) . " ERROR: $s\n" );
+		$this->log( 'ERROR', $s );
 	}
 }

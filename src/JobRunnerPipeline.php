@@ -45,10 +45,18 @@ class JobRunnerPipeline {
 		// @phan-suppress-next-line PhanTypeMismatchDimFetch
 		foreach ( $this->procMap[$loop] as $slot => &$procSlot ) {
 			$status = $procSlot['handle'] ? proc_get_status( $procSlot['handle'] ) : null;
+			// Here be dragons. $status doesn't seem to populate properly unless added to $msg before 'exitcode' is checked.
+			// Mention any serious errors that may have occured
+			$msg = [
+				'command' => $procSlot['cmd'],
+				'loop' => $loop,
+				'slot' => $slot,
+			];
 			if ( $status ) {
+				$msg += $status;
 				// Keep reading in any output (nonblocking) to avoid process lockups
-				$procSlot['stdout'] .= fread( $procSlot['pipes'][1], 65535 );
-				$procSlot['stderr'] .= fread( $procSlot['pipes'][2], 65535 );
+				$procSlot['stdout'] .= stream_get_contents( $procSlot['pipes'][1] );
+				$procSlot['stderr'] .= stream_get_contents( $procSlot['pipes'][2] );
 			}
 			if ( $status && $status['running'] ) {
 				$maxReal = $this->srvc->maxRealMap[$procSlot['type']] ?? $this->srvc->maxRealMap['*'];
@@ -87,27 +95,13 @@ class JobRunnerPipeline {
 					$this->srvc->incrStats( "pop.{$procSlot['type']}.ok.{$host}", $ok );
 					$this->srvc->incrStats( "pop.{$procSlot['type']}.failed.{$host}", $failed );
 				} else {
-					// Mention any serious errors that may have occured
-					$extraMessage = '';
-					if ( $result === null ) {
-						$extraMessage = sprintf( "json_decode() error (%s): %s\n",
-						   json_last_error(), json_last_error_msg() );
-					}
-					$cmd = $procSlot['cmd'];
 					if ( $procSlot['stderr'] ) {
-						$error = $procSlot['stderr'];
-						$cmd .= ' STDERR:';
+						$msg['stderr'] = $procSlot['stderr'];
 					} else {
-						$error = $procSlot['stdout'];
-						$cmd .= ' STDOUT:';
+						$msg['stdout'] = is_array( $result ) ? $result : $procSlot['stdout'];
 					}
 
-					if ( strlen( $error ) > 4096 ) {
-						// truncate long errors
-						$error = mb_substr( $error, 0, 4096 ) . '...';
-					}
-					$this->srvc->error( "Runner loop $loop process in slot $slot " .
-						"gave status '{$status['exitcode']}':\n$extraMessage$cmd\n\t$error" );
+					$this->srvc->error( $msg );
 					$this->srvc->incrStats( 'runner-status.error', 1 );
 				}
 				$this->closeRunner( $loop, $slot, $procSlot );
