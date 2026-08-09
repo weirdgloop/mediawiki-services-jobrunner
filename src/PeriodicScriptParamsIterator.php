@@ -1,4 +1,5 @@
 <?php
+declare( strict_types = 1 );
 
 class PeriodicScriptParamsIterator implements Iterator {
 	/** @var RedisJobChronService */
@@ -13,7 +14,7 @@ class PeriodicScriptParamsIterator implements Iterator {
 
 	/**
 	 * @param RedisJobChronService $service
-	 * @param array $queueIds JSON encoded queue name list (type, domain)
+	 * @param string[] $queueIds JSON encoded queue name list (type, domain)
 	 */
 	public function __construct( RedisJobChronService $service, array $queueIds ) {
 		$this->service = $service;

@@ -1,4 +1,5 @@
 <?php
+declare( strict_types = 1 );
 
 require __DIR__ . '/RedisExceptionHA.php';
 
@@ -16,9 +17,9 @@ use Wikimedia\IPUtils;
 abstract class RedisJobService {
 	private const MAX_UDP_SIZE_STR = 512;
 
-	/** @var array List of IP:<port> entries */
+	/** @var string[] List of IP:<port> entries */
 	protected $queueSrvs = [];
-	/** @var array List of IP:<port> entries */
+	/** @var string[] List of IP:<port> entries */
 	protected $aggrSrvs = [];
 	/** @var string Redis password */
 	protected $password;
@@ -26,23 +27,23 @@ abstract class RedisJobService {
 	protected $persistent;
 	/** @var string IP address or hostname */
 	protected $statsdHost;
-	/** @var array statsd packets pending sending */
+	/** @var string[] statsd packets pending sending */
 	private $statsdPackets = [];
 	/** @var int Port number */
 	protected $statsdPort;
 
 	/** @var bool */
 	protected $verbose;
-	/** @var array Map of (job type => integer seconds) */
+	/** @var array<string,int> Map of (job type => integer seconds) */
 	protected $claimTTLMap = [];
-	/** @var array Map of (job type => integer) */
+	/** @var array<string,int> Map of (job type => integer) */
 	protected $attemptsMap = [];
 
-	/** @var array Map of (id => (include,exclude,low-priority,count) */
+	/** @var array<int,array> Map of (id => (include,exclude,low-priority,count) */
 	public $loopMap = [];
-	/** @var array Map of (job type => integer) */
+	/** @var array<string,int> Map of (job type => integer) */
 	public $maxRealMap = [];
-	/** @var array Map of (job type => integer) */
+	/** @var array<string,string> Map of (job type => string) */
 	public $maxMemMap = [];
 	/** @var string Command to run jobs and return the status JSON blob */
 	public $dispatcher;
@@ -76,9 +77,9 @@ abstract class RedisJobService {
 	 */
 	public $hpMaxTime = 30;
 
-	/** @var array Map of (server => Redis object) */
+	/** @var array<string,Redis> Map of (server => Redis object) */
 	protected $conns = [];
-	/** @var array Map of (server => timestamp) */
+	/** @var array<string,int> Map of (server => timestamp) */
 	protected $downSrvs = [];
 
 	/**
@@ -232,7 +233,7 @@ abstract class RedisJobService {
 
 	/**
 	 * @param string $name
-	 * @return array (per JobQueueAggregatorRedis.php)
+	 * @return string[] (per JobQueueAggregatorRedis.php)
 	 */
 	public function dencQueueName( $name ) {
 		[ $type, $domain ] = explode( '/', $name, 2 );
@@ -325,7 +326,7 @@ abstract class RedisJobService {
 		// we had some job runners oom'ing on this call, log what we are
 		// doing so there is relevant information next to the oom
 		$this->debug( "Redis cmd: $cmd " . json_encode( $args ) );
-		$res = call_user_func_array( [ $conn, $cmd ], $args );
+		$res = $conn->$cmd( ...$args );
 		$err = $conn->getLastError();
 		if ( $err !== null ) {
 			// Make all errors be exceptions instead of "most but not all".
@@ -338,7 +339,7 @@ abstract class RedisJobService {
 	/**
 	 * Execute a command on the current working server in $servers
 	 *
-	 * @param array $servers Ordered list of servers to attempt
+	 * @param string[] $servers Ordered list of servers to attempt
 	 * @param string $cmd
 	 * @param array $args
 	 * @return mixed
@@ -362,7 +363,7 @@ abstract class RedisJobService {
 	/**
 	 * Execute a command on all servers in $servers
 	 *
-	 * @param array $servers List of servers to attempt
+	 * @param string[] $servers List of servers to attempt
 	 * @param string $cmd
 	 * @param array $args
 	 * @return int Number of servers updated

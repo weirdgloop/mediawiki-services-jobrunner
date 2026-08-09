@@ -1,9 +1,10 @@
 <?php
+declare( strict_types = 1 );
 
 class JobRunnerPipeline {
 	/** @var RedisJobService */
 	protected $srvc;
-	/** @var array (loop ID => slot ID => slot status array) */
+	/** @var array<int,array<int,array>> (loop ID => slot ID => slot status array) */
 	protected $procMap = [];
 
 	/**
@@ -14,7 +15,7 @@ class JobRunnerPipeline {
 	}
 
 	/**
-	 * @param string $loop
+	 * @param int $loop
 	 * @param int $slot
 	 */
 	public function initSlot( $loop, $slot ) {
@@ -33,16 +34,15 @@ class JobRunnerPipeline {
 
 	/**
 	 * @param int $loop
-	 * @param array $prioMap
-	 * @param array &$pending
-	 * @return array
+	 * @param array<int,array> $prioMap
+	 * @param array<string,array<string,int>> &$pending
+	 * @return int[]
 	 */
 	public function refillSlots( $loop, array $prioMap, array &$pending ) {
 		$free = 0;
 		$new = 0;
 		$host = gethostname();
 		$cTime = time();
-		// @phan-suppress-next-line PhanTypeMismatchDimFetch
 		foreach ( $this->procMap[$loop] as $slot => &$procSlot ) {
 			$status = $procSlot['handle'] ? proc_get_status( $procSlot['handle'] ) : null;
 			// Here be dragons. $status doesn't seem to populate properly unless added to $msg before 'exitcode' is checked.
@@ -132,9 +132,9 @@ class JobRunnerPipeline {
 
 	/**
 	 * @param int $loop
-	 * @param array $prioMap
-	 * @param array $pending
-	 * @return array|bool
+	 * @param array<int,array> $prioMap
+	 * @param array<string,array<string,int>> $pending
+	 * @return string[]|bool
 	 */
 	protected function selectQueue( $loop, array $prioMap, array $pending ) {
 		$include = $this->srvc->loopMap[$loop]['include'];
@@ -174,27 +174,30 @@ class JobRunnerPipeline {
 	 * @param int $loop
 	 * @param int $slot
 	 * @param bool $highPrio
-	 * @param array $queue
+	 * @param string[] $queue
 	 * @param array &$procSlot
 	 * @return bool
 	 */
 	protected function spawnRunner( $loop, $slot, $highPrio, array $queue, array &$procSlot ) {
 		// Pick a random queue
 		[ $type, $db ] = $queue;
-		$maxtime = $highPrio ? $this->srvc->lpMaxTime : $this->srvc->hpMaxTime;
+		$maxtime = (string)( $highPrio ? $this->srvc->lpMaxTime : $this->srvc->hpMaxTime );
 		$maxmem = $this->srvc->maxMemMap[$type] ?? $this->srvc->maxMemMap['*'];
 
 		// Make sure the runner is launched with various time/memory limits.
 		// Nice the process so things like ssh and deployment scripts are fine.
-		$what = $with = [];
-		foreach ( compact( 'db', 'type', 'maxtime', 'maxmem' ) as $k => $v ) {
-			$what[] = "%($k)u";
-			$with[] = rawurlencode( $v );
-			$what[] = "%($k)x";
-			$with[] = escapeshellarg( $v );
+		$replacements = [];
+		foreach ( [
+			'db' => $db,
+			'type' => $type,
+			'maxtime' => $maxtime,
+			'maxmem' => $maxmem,
+		] as $name => $value ) {
+			$replacements["%($name)u"] = rawurlencode( $value );
+			$replacements["%($name)x"] = escapeshellarg( $value );
 		}
 		// The dispatcher might be runJobs.php, curl, or wget
-		$cmd = str_replace( $what, $with, $this->srvc->dispatcher );
+		$cmd = strtr( $this->srvc->dispatcher, $replacements );
 
 		$descriptors = [
 			// stdin (child)
@@ -213,8 +216,8 @@ class JobRunnerPipeline {
 		$procSlot['handle'] = proc_open( $cmd, $descriptors, $procSlot['pipes'] );
 		if ( $procSlot['handle'] ) {
 			// Make sure socket reads don't wait for data
-			stream_set_blocking( $procSlot['pipes'][1], 0 );
-			stream_set_blocking( $procSlot['pipes'][2], 0 );
+			stream_set_blocking( $procSlot['pipes'][1], false );
+			stream_set_blocking( $procSlot['pipes'][2], false );
 			// Set a timeout so stream_get_contents() won't block for sanity
 			stream_set_timeout( $procSlot['pipes'][1], 1 );
 			stream_set_timeout( $procSlot['pipes'][2], 1 );
